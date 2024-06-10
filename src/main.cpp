@@ -4,33 +4,59 @@
 
 const char* ssid = "tang2";
 const char* password = "12345678";
-const char* mqtt_server = "192.168.31.186";
+const char* mqtt_server = "192.168.31.254";
+const char* mqtt_user = "mqtt_user";
+const char* mqtt_pass = "12345678";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-void sendSensorData(String message) {
-  JsonDocument doc;
+void handleSensorDataFromBB(String message) {
+  DynamicJsonDocument doc(256);
   int tempIndex = message.indexOf("Temp: ");
   int humiIndex = message.indexOf("Humidity: ");
   int lightIndex = message.indexOf("Light: ");
-  int fromIndex = message.indexOf("From Add: ");
+  int pirIndex = message.indexOf("PIR: ");
   
-  if (tempIndex != -1 && humiIndex != -1 && lightIndex != -1 && fromIndex != -1) {
+  if (tempIndex != -1 && humiIndex != -1 && lightIndex != -1 && pirIndex != -1) {
     String temp = message.substring(tempIndex + 6, message.indexOf("C", tempIndex));
     String humi = message.substring(humiIndex + 10, message.indexOf("%", humiIndex));
-    String state = message.substring(lightIndex + 7, message.indexOf(",", lightIndex));
-    String add = message.substring(fromIndex + 10);
+    String light = message.substring(lightIndex + 7, message.indexOf(",", lightIndex));
+    String pir = message.substring(pirIndex + 5, message.indexOf(" ", pirIndex + 5));
 
-    doc["temp"] = temp;
-    doc["humi"] = humi;
-    doc["state"] = state;
-    doc["add"] = add;
+    doc["temperature"] = temp;
+    doc["humidity"] = humi;
+    doc["light"] = light;
+    doc["pir"] = pir;
   }
 
   char buffer[256];
   size_t n = serializeJson(doc, buffer);
-  client.publish("/gateway/data", buffer, n);
+  client.publish("home-assistant/sensor1", buffer, n);
+}
+
+void handleSensorDataFromBA(String message) {
+  DynamicJsonDocument doc(256);
+  int tempIndex = message.indexOf("Temp: ");
+  int humiIndex = message.indexOf("Humidity: ");
+  int lightIndex = message.indexOf("Light: ");
+  int fanIndex = message.indexOf("Fan: ");
+  
+  if (tempIndex != -1 && humiIndex != -1 && lightIndex != -1 && fanIndex != -1) {
+    String temp = message.substring(tempIndex + 6, message.indexOf("C", tempIndex));
+    String humi = message.substring(humiIndex + 10, message.indexOf("%", humiIndex));
+    String light = message.substring(lightIndex + 7, message.indexOf(",", lightIndex));
+    String fan = message.substring(fanIndex + 5, message.indexOf(",", fanIndex));
+
+    doc["temperature"] = temp;
+    doc["humidity"] = humi;
+    doc["light"] = light;
+    doc["fan"] = fan;
+  }
+
+  char buffer[256];
+  size_t n = serializeJson(doc, buffer);
+  client.publish("home-assistant/sensor2", buffer, n);
 }
 
 void sendCommandToZigbee(String command) {
@@ -76,7 +102,7 @@ void callback(char* topic, byte* message, unsigned int length) {
 void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
-    if (client.connect("ESP32Client")) {
+    if (client.connect("ESP32Client", mqtt_user, mqtt_pass)) {
       Serial.println("connected");
       client.subscribe("zigbee/command");
     } else {
@@ -98,7 +124,15 @@ void setup() {
 
   Serial.println("Receiver is ready.");
 }
-
+void sendSensorData(String message) {
+  if (message.indexOf("From Add: 0xbb") != -1) {
+    handleSensorDataFromBB(message);
+  } else if (message.indexOf("From Add: 0xba") != -1) {
+    handleSensorDataFromBA(message);
+  } else {
+    Serial.println("Unknown address in message: " + message);
+  }
+}
 void loop() {
   if (!client.connected()) {
     reconnect();
@@ -111,3 +145,4 @@ void loop() {
     sendSensorData(message);
   }
 }
+
